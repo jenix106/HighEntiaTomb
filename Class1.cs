@@ -24,27 +24,35 @@ namespace HighEntiaTomb
             {
                 transform.gameObject.AddComponent<ClimbableComponent>();
             }
+            foreach (Transform transform in level.customReferences.Find(match => match.name == "NoFallDamage").transforms)
+            {
+                transform.gameObject.AddComponent<WaterComponent>();
+            }
+            level.customReferences.Find(match => match.name == "Button").transforms[0].gameObject.AddComponent<ButtonComponent>();
             return base.OnLoadCoroutine();
         }
         public override void Update()
         {
             base.Update();
-            isInCombat = false;
-            foreach (Creature creature in Creature.allActive)
+            if (!WaveSpawner.TryGetRunningInstance(out WaveSpawner spawner))
             {
-                if (creature?.brain?.currentTarget != null && !creature.isPlayer && !creature.isKilled && (creature.brain.currentTarget.isPlayer || creature.brain.currentTarget.faction == Player.local.creature.faction))
+                isInCombat = false;
+                foreach (Creature creature in Creature.allActive)
                 {
-                    isInCombat = true;
-                    if (battleMusic.isPlaying) return;
-                    battleMusic.Play();
-                    music.Pause();
+                    if (creature?.brain?.currentTarget != null && !creature.isPlayer && !creature.isKilled && (creature.brain.currentTarget.isPlayer || creature.brain.currentTarget.faction == Player.local.creature.faction))
+                    {
+                        isInCombat = true;
+                        if (battleMusic.isPlaying) return;
+                        battleMusic.Play();
+                        music.Pause();
+                    }
                 }
+                if (isInCombat || !battleMusic.isPlaying) return;
+                uniqueBattleMusic.Stop();
+                battleMusic.Stop();
+                battleMusic.mute = false;
+                music.UnPause();
             }
-            if (isInCombat || !battleMusic.isPlaying) return;
-            uniqueBattleMusic.Stop();
-            battleMusic.Stop();
-            battleMusic.mute = false;
-            music.UnPause();
         }
     }
     public class ClimbableComponent : MonoBehaviour
@@ -62,6 +70,79 @@ namespace HighEntiaTomb
             {
                 RagdollHandClimb.climbFree = false;
             }
+        }
+    }
+    public class ButtonComponent : MonoBehaviour
+    {
+        Animator floor;
+        Animator shadow;
+        bool pressed = false;
+        public void Start()
+        {
+            floor = Level.current.customReferences.Find(match => match.name == "Floor").transforms[0].GetComponent<Animator>();
+            shadow = Level.current.customReferences.Find(match => match.name == "Floor").transforms[1].GetComponent<Animator>();
+        }
+        public void OnCollisionEnter(Collision c)
+        {
+            if (c.collider.GetComponentInParent<RagdollHand>() != null && !pressed)
+            {
+                floor.Play("FloorRemove");
+                shadow.Play("FloorRemove");
+                pressed = true;
+            }
+        }
+    }
+    public class WaterComponent : MonoBehaviour
+    {
+        bool fallDamage;
+        bool isStored;
+        public void OnTriggerStay(Collider c)
+        {
+            if (c.GetComponentInParent<Player>() != null)
+            {
+                if (!isStored)
+                {
+                    fallDamage = Player.fallDamage;
+                    isStored = true;
+                }
+                Player.fallDamage = false;
+            }
+        }
+        public void OnTriggerExit(Collider c)
+        {
+            if (c.GetComponentInParent<Player>() != null)
+            {
+                Player.fallDamage = fallDamage;
+                isStored = false;
+            }
+        }
+    }
+    public class SetTexture : StateMachineBehaviour
+    {
+        public List<Renderer> renderers;
+        public Texture2D texture;
+        public void Start()
+        {
+            if (Level.current?.customReferences.Find(match => match.name == "Water")?.transforms[0] != null)
+                foreach (Transform reference in Level.current.customReferences.Find(match => match.name == "Water").transforms)
+                {
+                    if (!renderers.Contains(reference.GetComponent<Renderer>())) renderers.Add(reference.GetComponent<Renderer>());
+                }
+        }
+        // OnStateEnter is called when a transition starts and the state machine starts to evaluate this state
+        override public void OnStateEnter(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
+        {
+            if (renderers.IsNullOrEmpty())
+                foreach (Transform reference in Level.current.customReferences.Find(match => match.name == "Water").transforms)
+                {
+                    if (!renderers.Contains(reference.GetComponent<Renderer>())) renderers.Add(reference.GetComponent<Renderer>());
+                }
+            if (!renderers.IsNullOrEmpty())
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer != null)
+                        renderer.material.SetTexture("_BaseMap", texture);
+                }
         }
     }
 }
